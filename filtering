@@ -1,0 +1,14 @@
+from scipy.signal import butter, sosfiltfilt
+
+def butter_lowpass_filter(signal, cutoff_hz, fs, order=4):
+    if cutoff_hz is None or cutoff_hz <= 0:
+        return signal.copy()
+    if cutoff_hz >= 0.5 * fs:
+        return signal.copy()
+    sos = butter(order, cutoff_hz, btype='low', fs=fs, output='sos')
+    # check length vs padlen; sosfiltfilt internally handles fewer issues but check manually
+    if len(signal) < (3 * (2 * order + 1)):
+        # fallback: use sosfilt (causal) for very short signals
+        from scipy.signal import sosfilt
+        return sosfilt(sos, signal)
+    return sosfiltfilt(sos, signal)
