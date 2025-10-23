@@ -2,7 +2,6 @@
 """
 Unit tests for filtering.py
 
-Educational focus:
 - moving_average should smooth signal (lower variance).
 - moving_average with window_size <=1 returns copy (not same object).
 - butter_lowpass_filter should return same signal when cutoff >= Nyquist.
