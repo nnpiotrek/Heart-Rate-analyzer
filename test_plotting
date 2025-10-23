@@ -1,0 +1,39 @@
+# tests/test_plotting.py
+"""
+Tests for plotting.py
+
+- Ensure plotting functions run in headless mode without raising exceptions.
+- Validate behavior when RR intervals array is empty.
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import plotting as plot_mod
+import data as data_mod
+import filtering as filt
+import analysis as an
+
+def test_plot_raw_vs_filtered_runs():
+    # Create small synthetic signal
+    t, sig, fs = data_mod.simulate_ecg(duration=5.0, fs=250, heart_rate_bpm=75,
+                                      noise_std=0.05, random_seed=7)
+    filtered = filt.butter_lowpass_filter(sig, cutoff_hz=30.0, fs=fs, order=4)
+    peaks, _ = an.detect_peaks(filtered, fs, prominence=0.3, distance_s=0.4)
+    # Should run without error in headless backend
+    plot_mod.plot_raw_vs_filtered(t, sig, filtered, peaks=peaks, title="Test plot")
+
+    # Close any figures to avoid accumulation in CI
+    plt.close('all')
+
+def test_plot_tachogram_and_histogram_with_empty_and_nonempty():
+    # Empty rr
+    plot_mod.plot_tachogram(np.array([]))  # Should print and return without exception
+    plot_mod.histogram_rr(np.array([]))    # Same
+
+    # Non-empty rr example
+    rr = np.array([0.9, 1.0, 1.1, 0.95])
+    plot_mod.plot_tachogram(rr)
+    plot_mod.histogram_rr(rr)
+
+    import matplotlib.pyplot as plt
+    plt.close('all')
