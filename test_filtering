@@ -1,0 +1,54 @@
+# tests/test_filtering.py
+"""
+Unit tests for filtering.py
+
+Educational focus:
+- moving_average should smooth signal (lower variance).
+- moving_average with window_size <=1 returns copy (not same object).
+- butter_lowpass_filter should return same signal when cutoff >= Nyquist.
+- butter_lowpass_filter should reduce high-frequency content when cutoff is low.
+"""
+
+import numpy as np
+import pytest
+import filtering as filt
+
+def test_moving_average_smoothing():
+    rng = np.random.RandomState(0)
+    signal = rng.randn(1000)  # white noise
+    # Add a low-frequency trend so variance comparison makes sense
+    signal += np.sin(np.linspace(0, 2*np.pi, len(signal)))
+
+    smoothed = filt.moving_average(signal, window_size=11)
+
+    # Smoothed should be same length and be different from original (but not NaN)
+    assert smoothed.shape == signal.shape
+    assert not np.isnan(smoothed).any()
+    # Variance should drop after smoothing (noise reduced)
+    assert np.var(smoothed) < np.var(signal)
+
+def test_moving_average_identity_and_copy():
+    arr = np.array([1.0, 2.0, 3.0])
+    # window_size <= 1 returns a copy of the input
+    out = filt.moving_average(arr, window_size=1)
+    assert np.allclose(out, arr)
+    assert out is not arr  # must be a copy
+
+def test_butter_lowpass_cutoff_at_or_above_nyquist():
+    fs = 100.0
+    t = np.linspace(0, 1, int(fs), endpoint=False)
+    sig = np.sin(2*np.pi*5*t)  # low frequency 5 Hz
+    # cutoff at Nyquist or higher -> function returns copy (no filtering)
+    out = filt.butter_lowpass_filter(sig, cutoff_hz=fs/2.0, fs=fs, order=4)
+    assert np.allclose(out, sig)
+
+def test_butter_lowpass_reduces_high_freq():
+    fs = 200.0
+    t = np.linspace(0, 1, int(fs), endpoint=False)
+    # Mix low and high freq components
+    sig = np.sin(2*np.pi*2*t) + 0.8*np.sin(2*np.pi*50*t)
+    filtered = filt.butter_lowpass_filter(sig, cutoff_hz=10.0, fs=fs, order=4)
+    # After heavy lowpass at 10 Hz, high-frequency amplitude should be much smaller.
+    # Compare std of high-frequency residual
+    residual = sig - filtered
+    assert np.std(residual) > 0.1  # some HF content removed
