@@ -1,0 +1,67 @@
+# tests/test_data.py
+"""
+Unit tests for data.py.
+
+- Ensure simulate_ecg returns consistent shape and approximate heart rate.
+- Verify loader handles different CSV shapes.
+- Verify wfdb loader raises a helpful error when wfdb is not installed.
+"""
+
+import numpy as np
+import pytest
+
+import data as data_mod
+
+def test_simulate_ecg_basic():
+    # Use a deterministic seed to make outputs reproducible.
+    duration = 10.0
+    fs_expected = 250
+    hr_bpm = 72.0
+
+    t, signal, fs = data_mod.simulate_ecg(duration=duration, fs=fs_expected,
+                                          heart_rate_bpm=hr_bpm, noise_std=0.01,
+                                          random_seed=1234)
+    # Basic shape checks
+    assert fs == fs_expected
+    assert isinstance(t, np.ndarray)
+    assert isinstance(signal, np.ndarray)
+    assert len(t) == int(duration * fs_expected)
+    assert len(signal) == len(t)
+
+    # Compute approximate beat-to-beat period using prominent peaks
+    # A rough check: spectral peak near expected frequency
+    freqs = np.fft.rfftfreq(len(signal), 1.0 / fs)
+    mag = np.abs(np.fft.rfft(signal))
+    peak_idx = np.argmax(mag)
+    dominant_hz = freqs[peak_idx]
+
+    # The dominant frequency should be near hr_bpm/60 (allow some tolerance)
+    assert abs(dominant_hz - (hr_bpm / 60.0)) < 0.5
+
+def test_load_csv_variants(temp_csv_one_row, temp_csv_one_col, temp_csv_two_cols):
+    # One-row, many-columns
+    sig1 = data_mod.load_csv_ecg(temp_csv_one_row)
+    assert sig1.ndim == 1
+    assert len(sig1) == 100
+
+    # One-column many rows
+    sig2 = data_mod.load_csv_ecg(temp_csv_one_col)
+    assert sig2.ndim == 1
+    assert len(sig2) == 250
+
+    # Two columns: default returns first column
+    sig3 = data_mod.load_csv_ecg(temp_csv_two_cols)
+    assert sig3.ndim == 1
+    assert len(sig3) == 100
+
+def test_load_wfdb_raises_when_missing(monkeypatch):
+    """
+    The function load_wfdb_record tries to import wfdb.
+    If wfdb is not available it should raise a RuntimeError with helpful text.
+    This test simulates ImportError by temporarily overriding import.
+    """
+    # Simulate module import failing by making import wfdb raise ImportError
+    monkeypatch.setitem(__builtins__, '__import__', lambda name, globals=None, locals=None, fromlist=(), level=0: (_ for _ in ()).throw(ImportError("no module named wfdb")) if name == 'wfdb' else __import__(name, globals, locals, fromlist, level))
+    with pytest.raises(RuntimeError) as exc:
+        data_mod.load_wfdb_record("mitdb/100")  # arguments don't matter; import fails first
+    assert "wfdb package required" in str(exc.value)
