@@ -2,19 +2,18 @@
 analysis.py
 ============
 Peak detection and heart rate / HRV analysis.
-
-Author: (Your Name)
-
-Educational overview:
 ---------------------
-This module is where physiological signal processing happens.
-It identifies heart beats (R-peaks or PPG peaks),
-then derives key metrics:
-- Heart Rate (HR)
-- RR intervals
-- Heart Rate Variability (HRV)
+This module implements the key signal-processing logic
+for deriving cardiovascular metrics from ECG or PPG signals.
 
-These measures reflect cardiac function and autonomic balance.
+Physiological purpose:
+----------------------
+- Identify heart beats (R-peaks in ECG or pulse peaks in PPG)
+- Compute Heart Rate (HR) and Heart Rate Variability (HRV)
+- Classify cardiac rhythm in a simple rule-based way
+
+Each function is isolated so that it can be tested or replaced
+independently in a modular analysis pipeline.
 """
 
 import numpy as np
@@ -23,79 +22,148 @@ from scipy.signal import find_peaks
 
 def detect_peaks(signal, fs, min_bpm=30, max_bpm=220, prominence=0.3, distance_s=0.4):
     """
-    Detect R-peaks or pulse peaks using scipy.signal.find_peaks.
+    Detects heartbeat-related peaks (R-peaks or pulse peaks).
 
     Parameters
     ----------
     signal : np.ndarray
-        Input signal
+        Input signal (ECG or PPG waveform).
     fs : float
-        Sampling frequency (Hz)
+        Sampling frequency in Hz.
     min_bpm, max_bpm : float
-        Physiological limits for valid heart rates
+        Physiological limits for plausible heart rates.
+        Used mainly to guide `distance_s`.
     prominence : float
-        Peak prominence threshold (how strong a peak must be)
+        Minimum required peak prominence.
+        A higher value filters out minor fluctuations.
     distance_s : float
-        Minimum distance between peaks in seconds (prevents double detections)
+        Minimum allowed distance between peaks in seconds.
+        Prevents detecting multiple peaks per beat.
 
     Returns
     -------
     peaks : np.ndarray
-        Indices of detected peaks
+        Indices (samples) of detected peaks.
     properties : dict
-        Additional properties from scipy.find_peaks
+        Dictionary of peak properties returned by `scipy.signal.find_peaks`.
+
+    Educational note
+    ----------------
+    The `find_peaks` function is a core signal-processing tool.
+    Here it works as a *temporal filter* that detects maxima above
+    a certain height and spacing. Correct peak detection is crucial,
+    because all later steps (HR, HRV) depend on it.
     """
+    # Convert minimum spacing from seconds to samples
     distance_samples = int(distance_s * fs)
+
+    # Detect peaks with required prominence and spacing
     peaks, properties = find_peaks(signal, distance=distance_samples, prominence=prominence)
+
+    # Return both positions and metadata (e.g., prominence, width)
     return peaks, properties
 
 
 def compute_hr_and_rr(peaks, t):
     """
-    Compute heart rate (HR) and RR intervals from detected peaks.
+    Compute Heart Rate (HR) and RR intervals from detected peaks.
 
-    RR intervals = time differences between consecutive beats.
+    Parameters
+    ----------
+    peaks : np.ndarray
+        Indices of detected heartbeat peaks.
+    t : np.ndarray
+        Time vector corresponding to the signal samples.
 
-    HR = 60 / mean(RR)
+    Returns
+    -------
+    hr : float
+        Average heart rate (beats per minute).
+    rr : np.ndarray
+        RR intervals (s) — differences between consecutive beat times.
+
+    Notes
+    -----
+    - RR intervals are derived from consecutive peak times.
+    - The mean RR interval corresponds to one cardiac cycle duration.
+      HR = 60 / mean(RR)
+    - When fewer than 2 peaks are detected, HR cannot be computed.
     """
     if len(peaks) < 2:
+        # Not enough peaks to compute RR intervals
         return 0.0, np.array([])
 
+    # Convert indices to times
     times = t[peaks]
+
+    # Compute RR intervals as differences between consecutive beat times
     rr = np.diff(times)
+
+    # Convert mean RR (s/beat) into heart rate (beats/min)
     hr = 60.0 / np.mean(rr)
+
     return hr, rr
 
 
 def compute_hrv(rr_intervals_s):
     """
-    Compute heart rate variability (HRV) metrics.
+    Compute Heart Rate Variability (HRV) using SDNN metric.
 
-    Metric: SDNN (standard deviation of RR intervals)
+    Parameters
+    ----------
+    rr_intervals_s : np.ndarray
+        Array of RR intervals (in seconds).
 
-    Educational note:
-    -----------------
-    HRV reflects how much the heart rhythm varies over time.
-    High HRV = healthy autonomic flexibility.
-    Low HRV = stress or reduced vagal tone.
+    Returns
+    -------
+    sdnn : float
+        Standard deviation of RR intervals, in milliseconds (ms).
+
+    Educational note
+    ----------------
+    - HRV quantifies how variable the heart rhythm is over time.
+    - It reflects the balance between sympathetic and parasympathetic control.
+    - Higher HRV generally indicates healthy autonomic regulation.
+
+    Metric used:
+    -------------
+    SDNN = standard deviation of normal-to-normal RR intervals.
     """
     if rr_intervals_s.size == 0:
+        # Empty input → cannot compute HRV
         return np.nan
 
-    sdnn = np.std(rr_intervals_s) * 1000.0  # convert to ms
+    # Compute standard deviation and convert from seconds to milliseconds
+    sdnn = np.std(rr_intervals_s) * 1000.0
     return sdnn
 
 
 def classify_rhythm(hr_bpm, hrv_sdnn_ms, hr_threshold=(40, 110), hrv_threshold=150):
     """
-    Simple rule-based classification of heart rhythm.
+    Classify cardiac rhythm based on HR and HRV thresholds.
 
-    Educational rules:
-    ------------------
-    - Bradycardia: HR < 40 bpm
-    - Tachycardia: HR > 110 bpm
-    - Irregular rhythm: HRV too high (SDNN > 150 ms)
-    - Otherwise: Normal
+    Parameters
+    ----------
+    hr_bpm : float
+        Heart rate (beats per minute).
+    hrv_sdnn_ms : float
+        Heart rate variability (SDNN, ms).
+    hr_threshold : tuple of (low, high)
+        Boundaries for bradycardia and tachycardia.
+    hrv_threshold : float
+        Threshold for 'irregular' rhythm classification.
+
+    Returns
+    -------
+    str
+        One of: 'no-detection', 'bradycardia', 'tachycardia', 'irregular', 'normal'
+
+    Educational note
+    ----------------
+    - **Bradycardia:** HR < 40 bpm (slow rhythm)
+    - **Tachycardia:** HR > 110 bpm (fast rhythm)
+    - **Irregular:** excessive HRV (SDNN > 150 ms)
+    - **Normal:** HR within limits and moderate variability
     """
     if hr_bpm == 0:
         return "no-detection"
@@ -106,4 +174,3 @@ def classify_rhythm(hr_bpm, hrv_sdnn_ms, hr_threshold=(40, 110), hrv_threshold=1
     if hrv_sdnn_ms > hrv_threshold:
         return "irregular"
     return "normal"
-
