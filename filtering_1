@@ -1,16 +1,11 @@
 """
 filtering.py
 =============
-Signal filtering utilities for ECG preprocessing.
-
-Author: (Your Name)
-
-Educational notes:
-------------------
-Filtering reduces high-frequency noise (like muscle or sensor noise).
-We provide:
-- Moving average smoothing
-- Butterworth low-pass filter with zero-phase distortion
+Signal filtering utilities for ECG/PPG preprocessing.
+-----------------
+Two simple methods are demonstrated here:
+1. Moving average smoothing → removes random noise.
+2. Butterworth low-pass filter → removes high-frequency noise while preserving waveform shape.
 """
 
 import numpy as np
@@ -19,18 +14,40 @@ from scipy.signal import butter, filtfilt
 
 def moving_average(signal, window_size=5):
     """
-    Apply a simple moving average smoother.
+    Apply a moving average smoothing filter.
 
-    Concept:
-    --------
-    Each output sample = average of its neighbors.
-    This reduces random noise but can blur sharp peaks if the window is too large.
+    Parameters
+    ----------
+    signal : np.ndarray
+        Input noisy signal.
+    window_size : int
+        Number of samples to average over (must be >1 to smooth).
+
+    Returns
+    -------
+    smoothed : np.ndarray
+        Smoothed signal with reduced noise.
+
+    Educational concept
+    -------------------
+    - Each output point is the *average* of its local neighbors.
+    - Larger windows smooth more but can blur peaks (trade-off between noise and detail).
+    - This is a simple linear filter often used for demonstration before introducing
+      more advanced filters (e.g., Butterworth, Savitzky-Golay).
     """
     if window_size <= 1:
+        # No smoothing if window too small
         return signal.copy()
 
+    # Create a normalized averaging kernel (weights sum to 1)
     kernel = np.ones(window_size) / window_size
-    padded = np.pad(signal, (window_size // 2, window_size - 1 - window_size // 2), mode='edge')
+
+    # Pad the signal edges to maintain output length
+    padded = np.pad(signal,
+                    (window_size // 2, window_size - 1 - window_size // 2),
+                    mode='edge')
+
+    # Convolve padded signal with kernel → moving average
     smoothed = np.convolve(padded, kernel, mode='valid')
     return smoothed
 
@@ -39,27 +56,40 @@ def butter_lowpass_filter(signal, cutoff_hz, fs, order=4):
     """
     Apply a zero-phase Butterworth low-pass filter.
 
-    Concept:
-    --------
-    - 'Low-pass' means we keep slow changes (like heart beats)
-      and remove fast noise.
-    - 'filtfilt' applies the filter forward and backward to cancel phase delay.
-
+    Parameters
+    ----------
+    signal : np.ndarray
+        Input signal (e.g., ECG).
     cutoff_hz : float
-        Cutoff frequency (Hz)
+        Cutoff frequency (Hz) below which signals are preserved.
     fs : float
-        Sampling rate (Hz)
+        Sampling frequency (Hz).
     order : int
-        Filter order (higher = steeper cutoff)
+        Filter order — higher order = steeper cutoff.
+
+    Returns
+    -------
+    filtered : np.ndarray
+        Filtered signal with reduced high-frequency content.
+
+    Educational concept
+    -------------------
+    - A *low-pass filter* preserves slow components (like heart beats)
+      and suppresses rapid fluctuations (noise).
+    - `filtfilt` applies the filter forwards and backwards,
+      removing phase delay (time shift) — essential in biomedical analysis.
+    - Butterworth design is "maximally flat" in the passband — smooth and stable.
     """
-    nyq = 0.5 * fs
-    Wn = float(cutoff_hz) / nyq
+    nyq = 0.5 * fs               # Nyquist frequency = half of sampling rate
+    Wn = float(cutoff_hz) / nyq  # Normalized cutoff (0–1)
 
     if Wn >= 1.0:
-        # No filtering needed
+        # If cutoff ≥ Nyquist → nothing to filter
         return signal.copy()
 
+    # Design Butterworth filter coefficients
     b, a = butter(order, Wn, btype='low')
+
+    # Apply zero-phase filtering (forward + backward)
     filtered = filtfilt(b, a, signal)
     return filtered
-
