@@ -1,14 +1,65 @@
-from scipy.signal import butter, sosfiltfilt
+"""
+filtering.py
+=============
+Signal filtering utilities for ECG preprocessing.
+
+Author: (Your Name)
+
+Educational notes:
+------------------
+Filtering reduces high-frequency noise (like muscle or sensor noise).
+We provide:
+- Moving average smoothing
+- Butterworth low-pass filter with zero-phase distortion
+"""
+
+import numpy as np
+from scipy.signal import butter, filtfilt
+
+
+def moving_average(signal, window_size=5):
+    """
+    Apply a simple moving average smoother.
+
+    Concept:
+    --------
+    Each output sample = average of its neighbors.
+    This reduces random noise but can blur sharp peaks if the window is too large.
+    """
+    if window_size <= 1:
+        return signal.copy()
+
+    kernel = np.ones(window_size) / window_size
+    padded = np.pad(signal, (window_size // 2, window_size - 1 - window_size // 2), mode='edge')
+    smoothed = np.convolve(padded, kernel, mode='valid')
+    return smoothed
+
 
 def butter_lowpass_filter(signal, cutoff_hz, fs, order=4):
-    if cutoff_hz is None or cutoff_hz <= 0:
+    """
+    Apply a zero-phase Butterworth low-pass filter.
+
+    Concept:
+    --------
+    - 'Low-pass' means we keep slow changes (like heart beats)
+      and remove fast noise.
+    - 'filtfilt' applies the filter forward and backward to cancel phase delay.
+
+    cutoff_hz : float
+        Cutoff frequency (Hz)
+    fs : float
+        Sampling rate (Hz)
+    order : int
+        Filter order (higher = steeper cutoff)
+    """
+    nyq = 0.5 * fs
+    Wn = float(cutoff_hz) / nyq
+
+    if Wn >= 1.0:
+        # No filtering needed
         return signal.copy()
-    if cutoff_hz >= 0.5 * fs:
-        return signal.copy()
-    sos = butter(order, cutoff_hz, btype='low', fs=fs, output='sos')
-    # check length vs padlen; sosfiltfilt internally handles fewer issues but check manually
-    if len(signal) < (3 * (2 * order + 1)):
-        # fallback: use sosfilt (causal) for very short signals
-        from scipy.signal import sosfilt
-        return sosfilt(sos, signal)
-    return sosfiltfilt(sos, signal)
+
+    b, a = butter(order, Wn, btype='low')
+    filtered = filtfilt(b, a, signal)
+    return filtered
+
