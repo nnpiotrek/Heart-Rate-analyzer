@@ -2,7 +2,6 @@
 """
 Unit tests for analysis.py
 
-Educational focus:
 - detect_peaks should find ~N beats for a simulated signal with clear Gaussian peaks.
 - compute_hr_and_rr should compute HR near simulated heart rate and RR intervals consistent with beat spacing.
 - compute_hrv should compute SDNN in ms; edge-case handling when empty RR array.
