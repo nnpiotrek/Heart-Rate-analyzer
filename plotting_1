@@ -2,7 +2,6 @@
 plotting.py
 ============
 Plotting utilities for ECG signal analysis.
-
 """
 
 import matplotlib.pyplot as plt
@@ -12,12 +11,34 @@ import numpy as np
 def plot_raw_vs_filtered(t, raw, filtered, peaks=None, title="Raw vs Filtered Signal"):
     """
     Plot raw and filtered signals together with detected peaks.
+
+    Parameters
+    ----------
+    t : np.ndarray
+        Time vector (seconds)
+    raw : np.ndarray
+        Original (unfiltered) signal
+    filtered : np.ndarray
+        Processed (filtered) signal
+    peaks : np.ndarray or None
+        Indices of detected peaks (optional)
+    title : str
+        Plot title
+
+    Educational purpose
+    -------------------
+    This visualization helps you see the effect of preprocessing:
+    - The filtered signal should appear smoother.
+    - Peak markers confirm if detection aligns with QRS complexes.
     """
     plt.figure(figsize=(12, 4))
     plt.plot(t, raw, label='Raw', alpha=0.5)
     plt.plot(t, filtered, label='Filtered', linewidth=1.2)
+
+    # Mark detected peaks (if provided)
     if peaks is not None and len(peaks) > 0:
         plt.plot(t[peaks], filtered[peaks], 'ro', label='Detected peaks')
+
     plt.xlabel("Time (s)")
     plt.ylabel("Amplitude")
     plt.title(title)
@@ -28,11 +49,23 @@ def plot_raw_vs_filtered(t, raw, filtered, peaks=None, title="Raw vs Filtered Si
 
 def plot_tachogram(rr_s):
     """
-    Plot RR intervals (tachogram) over time.
+    Plot a tachogram (RR intervals vs beat index).
+
+    Parameters
+    ----------
+    rr_s : np.ndarray
+        RR intervals (seconds)
+
+    Educational concept
+    -------------------
+    The tachogram visualizes how beat-to-beat intervals fluctuate.
+    This is one of the simplest HRV visualizations and can reveal
+    arrhythmias or respiratory sinus arrhythmia patterns.
     """
     if len(rr_s) == 0:
         print("No RR intervals to plot.")
         return
+
     plt.figure(figsize=(8, 3))
     plt.plot(np.arange(1, len(rr_s) + 1), rr_s * 1000.0, marker='o')
     plt.xlabel("Beat index")
@@ -45,11 +78,23 @@ def plot_tachogram(rr_s):
 
 def histogram_rr(rr_s):
     """
-    Plot histogram of RR intervals to visualize distribution.
+    Plot histogram of RR intervals to visualize variability distribution.
+
+    Parameters
+    ----------
+    rr_s : np.ndarray
+        RR intervals (seconds)
+
+    Educational concept
+    -------------------
+    - A narrow histogram means regular rhythm (low HRV).
+    - A wide histogram means irregular rhythm (high HRV).
+    - Useful to quantify and visualize the spread of RR intervals.
     """
     if len(rr_s) == 0:
         print("No RR intervals to plot.")
         return
+
     plt.figure(figsize=(6, 3))
     plt.hist(rr_s * 1000.0, bins=20, edgecolor='black')
     plt.xlabel("RR interval (ms)")
