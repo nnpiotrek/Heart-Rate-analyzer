@@ -1,42 +1,141 @@
-def load_csv_ecg(path: str, fs: Optional[float] = None, column: Optional[str] = None):
+"""
+data.py
+========
+Data acquisition and ECG/PPG signal simulation utilities.
+
+Author: (Your Name)
+Course: Biomedical Engineering - Python & Numerical Methods
+Description:
+------------
+This module provides two main capabilities:
+1. Simulating synthetic ECG-like waveforms for testing signal-processing pipelines.
+2. Loading ECG signals from CSV or PhysioNet databases.
+
+Educational notes:
+------------------
+The synthetic ECG is built from periodic sinusoids plus Gaussian pulses
+to mimic QRS complexes (R-peaks). This helps test algorithms
+without needing clinical data.
+"""
+
+import numpy as np
+import pandas as pd
+
+
+def simulate_ecg(duration=10, fs=250, heart_rate_bpm=70, noise_std=0.2, random_seed=None):
     """
-    Load ECG from CSV. Attempts to detect time and signal columns.
-    Returns (t, signal, fs). If time column missing, returns t = arange(len(sig))/fs if fs provided,
-    otherwise t = np.arange(len(sig)).
+    Simulate an ECG-like waveform with Gaussian R-peaks.
+
+    Parameters
+    ----------
+    duration : float
+        Length of signal (s)
+    fs : int
+        Sampling frequency (Hz)
+    heart_rate_bpm : float
+        Average heart rate (beats per minute)
+    noise_std : float
+        Standard deviation of added Gaussian noise
+    random_seed : int or None
+        For reproducibility
+
+    Returns
+    -------
+    t : np.ndarray
+        Time vector (s)
+    signal : np.ndarray
+        Simulated ECG waveform (arbitrary units)
+    fs : int
+        Sampling frequency (Hz)
     """
-    df = pd.read_csv(path)
-    # try common names
-    cols = [c.lower() for c in df.columns]
-    time_col = None
-    sig_col = None
-    for name in ('time', 'timestamp', 't'):
-        if name in cols:
-            time_col = df.columns[cols.index(name)]
-            break
-    for name in ('ecg', 'ppg', 'signal', 'value'):
-        if name in cols:
-            sig_col = df.columns[cols.index(name)]
-            break
-    if sig_col is None:
-        # fallback: pick first numeric column
-        numeric_cols = df.select_dtypes(include='number').columns
-        if len(numeric_cols) == 0:
-            raise ValueError("No numeric column found in CSV")
-        sig_col = numeric_cols[0]
-    sig = df[sig_col].values.astype(float)
-    if time_col is not None:
-        t = df[time_col].values.astype(float)
-        if fs is None:
-            # try estimate from time vector
-            dt = np.diff(t)
-            if np.any(dt <= 0):
-                fs = None
-            else:
-                fs = 1.0 / np.median(dt)
-    if time_col is None:
-        if fs is None:
-            # unknown sampling: return integer time index
-            t = np.arange(len(sig))
-        else:
-            t = np.arange(len(sig)) / float(fs)
+    if random_seed is not None:
+        np.random.seed(random_seed)
+
+    # Time axis
+    t = np.linspace(0, duration, int(duration * fs), endpoint=False)
+
+    # Convert heart rate to frequency (Hz)
+    hr_hz = heart_rate_bpm / 60.0
+
+    # Basic sinusoid for heart rhythm periodicity
+    base = np.sin(2 * np.pi * hr_hz * t)
+
+    # Add harmonics to create more realistic ECG-like shapes
+    harm = 0.25 * np.sin(2 * np.pi * 2 * hr_hz * t) + 0.1 * np.sin(2 * np.pi * 3 * hr_hz * t)
+    signal = base + harm
+
+    # Add Gaussian R-peaks at each beat
+    beat_times = np.arange(0, duration, 1.0 / hr_hz)
+    for bt in beat_times:
+        sigma = 0.01  # narrow Gaussian for spike-like peaks
+        signal += np.exp(-0.5 * ((t - bt) / sigma) ** 2)
+
+    # Add noise to simulate realistic measurement conditions
+    signal += noise_std * np.random.randn(len(t))
+
+    return t, signal, fs
+
+
+def load_csv_ecg(path, column=None):
+    """
+    Load ECG-like data from a CSV file.
+
+    Educational note:
+    -----------------
+    This loader handles several possible data shapes:
+    - One row with many columns (common for datasets)
+    - Many rows with one signal column
+    - Time + signal in two columns
+
+    Parameters
+    ----------
+    path : str
+        Path to CSV file
+    column : int or None
+        Optional index of column to extract
+
+    Returns
+    -------
+    signal : np.ndarray
+        1D ECG signal
+    """
+    df = pd.read_csv(path, header=None)
+
+    # Handle shape variations
+    if df.shape[0] == 1 and df.shape[1] > 1:
+        return df.iloc[0].values
+
+    if df.shape[1] == 1:
+        return df.iloc[:, 0].values
+
+    if column is not None and column < df.shape[1]:
+        return df.iloc[:, column].values
+
+    # Default fallback
+    return df.iloc[:, 0].values
+
+
+def load_wfdb_record(record_name, pn_dir='mitdb'):
+    """
+    Load ECG signal from PhysioNet (requires wfdb package).
+
+    Returns
+    -------
+    t : np.ndarray
+        Time vector (s)
+    sig : np.ndarray
+        ECG waveform
+    fs : float
+        Sampling frequency
+    """
+    try:
+        import wfdb
+    except Exception as e:
+        raise RuntimeError("wfdb package required. Install with: pip install wfdb") from e
+
+    record = wfdb.rdrecord(record_name, pn_dir=pn_dir)
+    sig = record.p_signal[:, 0]
+    fs = record.fs
+    t = np.arange(len(sig)) / fs
     return t, sig, fs
+
