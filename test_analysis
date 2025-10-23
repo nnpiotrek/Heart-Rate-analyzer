@@ -1,0 +1,83 @@
+# tests/test_analysis.py
+"""
+Unit tests for analysis.py
+
+Educational focus:
+- detect_peaks should find ~N beats for a simulated signal with clear Gaussian peaks.
+- compute_hr_and_rr should compute HR near simulated heart rate and RR intervals consistent with beat spacing.
+- compute_hrv should compute SDNN in ms; edge-case handling when empty RR array.
+- classify_rhythm rule-based outputs on boundary conditions and special-case of no detection.
+"""
+
+import numpy as np
+import pytest
+import analysis as an
+import data as data_mod
+import filtering as filt
+
+def test_detect_peaks_and_hr_rr_consistency():
+    # Simulate a clean ECG-like signal with low noise so peaks are strong and findable.
+    duration = 20.0
+    fs = 250
+    hr_bpm = 60.0  # 1 Hz
+    t, signal, fs_ret = data_mod.simulate_ecg(duration=duration, fs=fs,
+                                             heart_rate_bpm=hr_bpm,
+                                             noise_std=0.01, random_seed=42)
+    assert fs_ret == fs
+
+    # Optionally apply light smoothing to improve detection
+    filtered = filt.moving_average(signal, window_size=5)
+
+    # Detect peaks using same sampling frequency; distance_s set to 0.6s to avoid double detection
+    peaks, properties = an.detect_peaks(filtered, fs, prominence=0.3, distance_s=0.5)
+
+    # Expect roughly duration*(hr_bpm/60) peaks
+    expected_beats = int(round(duration * hr_bpm / 60.0))
+    assert abs(len(peaks) - expected_beats) <= 2  # allow small difference
+
+    # Compute HR and RR
+    hr, rr = an.compute_hr_and_rr(peaks, t)
+    assert rr.ndim == 1
+    # HR should be close to set hr_bpm (tolerate small difference)
+    assert abs(hr - hr_bpm) < 3.0
+
+    # rr mean should be near 1.0 s for 60 bpm
+    assert abs(np.mean(rr) - (60.0/hr_bpm)) < 0.05
+
+def test_compute_hr_and_rr_short_signals():
+    # No peaks or single peak -> hr 0 and empty rr
+    t = np.array([0.0, 0.01, 0.02])
+    peaks = np.array([], dtype=int)
+    hr, rr = an.compute_hr_and_rr(peaks, t)
+    assert hr == 0.0
+    assert rr.size == 0
+
+    # Single peak -> still no rr intervals
+    peaks = np.array([1])
+    hr, rr = an.compute_hr_and_rr(peaks, t)
+    assert hr == 0.0
+    assert rr.size == 0
+
+def test_compute_hrv_and_classify():
+    # Create rr intervals with modest variability
+    rr = np.array([0.9, 1.0, 1.05, 0.95])
+    sdnn = an.compute_hrv(rr)
+    assert sdnn > 0.0
+    assert isinstance(sdnn, float)
+
+    # Classification behavior
+    # No detection
+    assert an.classify_rhythm(0.0, sdnn) == "no-detection"
+    # Bradycardia
+    assert an.classify_rhythm(30.0, sdnn) == "bradycardia"
+    # Tachycardia
+    assert an.classify_rhythm(120.0, sdnn) == "tachycardia"
+    # High HRV -> irregular
+    assert an.classify_rhythm(70.0, 200.0) == "irregular"
+    # Normal
+    assert an.classify_rhythm(70.0, 50.0) == "normal"
+
+def test_compute_hrv_empty_returns_nan():
+    empty = np.array([])
+    val = an.compute_hrv(empty)
+    assert np.isnan(val)
