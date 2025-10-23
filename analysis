@@ -1,98 +1,109 @@
-#analysis.py
+"""
+analysis.py
+============
+Peak detection and heart rate / HRV analysis.
+
+Author: (Your Name)
+
+Educational overview:
+---------------------
+This module is where physiological signal processing happens.
+It identifies heart beats (R-peaks or PPG peaks),
+then derives key metrics:
+- Heart Rate (HR)
+- RR intervals
+- Heart Rate Variability (HRV)
+
+These measures reflect cardiac function and autonomic balance.
+"""
+
 import numpy as np
 from scipy.signal import find_peaks
-from typing import Tuple, Dict, Any, Optional
 
-def detect_peaks(signal: np.ndarray,
-                 fs: float,
-                 min_bpm: int = 30,
-                 max_bpm: int = 220,
-                 prominence: Optional[float] = None,
-                 distance_s: Optional[float] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
+
+def detect_peaks(signal, fs, min_bpm=30, max_bpm=220, prominence=0.3, distance_s=0.4):
     """
-    Robust peak detection.
-    - signal: 1D array
-    - fs: sampling frequency (Hz)
-    - min_bpm/max_bpm: expected physiological bounds used to compute min distance
-    - prominence: if None, set adaptively from signal (e.g., 20th percentile of absolute values)
-    - distance_s: explicit min distance (seconds). If None, computed from max_bpm.
-    Returns (peaks_indices, properties)
+    Detect R-peaks or pulse peaks using scipy.signal.find_peaks.
+
+    Parameters
+    ----------
+    signal : np.ndarray
+        Input signal
+    fs : float
+        Sampling frequency (Hz)
+    min_bpm, max_bpm : float
+        Physiological limits for valid heart rates
+    prominence : float
+        Peak prominence threshold (how strong a peak must be)
+    distance_s : float
+        Minimum distance between peaks in seconds (prevents double detections)
+
+    Returns
+    -------
+    peaks : np.ndarray
+        Indices of detected peaks
+    properties : dict
+        Additional properties from scipy.find_peaks
     """
-    if distance_s is None:
-        distance_s = 60.0 / max_bpm  # min allowed interval in seconds
-    distance_samples = max(1, int(round(distance_s * fs)))
-
-    # adaptive prominence if not provided
-    if prominence is None:
-        # set to a fraction of signal dynamic range or median absolute dev
-        mad = np.median(np.abs(signal - np.median(signal)))
-        if mad == 0:
-            # fallback to small absolute
-            prominence = 0.1 * (np.max(signal) - np.min(signal) + 1e-8)
-        else:
-            prominence = max(0.5 * mad, 0.001 * (np.max(signal) - np.min(signal)))
-
+    distance_samples = int(distance_s * fs)
     peaks, properties = find_peaks(signal, distance=distance_samples, prominence=prominence)
     return peaks, properties
 
-def compute_hr_and_rr(peaks: np.ndarray, t: np.ndarray,
-                      valid_rr_range: Tuple[float, float] = (0.25, 3.0)
-                      ) -> Tuple[float, np.ndarray]:
+
+def compute_hr_and_rr(peaks, t):
     """
-    Convert peak indices to HR & RR.
-    Returns:
-      - mean_hr_bpm (np.nan if not enough valid beats)
-      - rr_intervals (in seconds), filtered to valid range
-    Notes:
-      - peaks are indices into t (int array)
-      - t is time array in seconds aligned to signal samples
+    Compute heart rate (HR) and RR intervals from detected peaks.
+
+    RR intervals = time differences between consecutive beats.
+
+    HR = 60 / mean(RR)
     """
     if len(peaks) < 2:
-        return float('nan'), np.array([], dtype=float)
+        return 0.0, np.array([])
 
     times = t[peaks]
-    rr = np.diff(times)  # seconds
+    rr = np.diff(times)
+    hr = 60.0 / np.mean(rr)
+    return hr, rr
 
-    # reject physiologically implausible intervals
-    rr_mask = (rr >= valid_rr_range[0]) & (rr <= valid_rr_range[1])
-    rr_valid = rr[rr_mask]
-    if rr_valid.size == 0:
-        return float('nan'), np.array([], dtype=float)
 
-    mean_hr = 60.0 / np.mean(rr_valid)
-    return float(mean_hr), rr_valid
-
-def compute_hrv(rr_intervals_s: np.ndarray) -> Dict[str, float]:
+def compute_hrv(rr_intervals_s):
     """
-    Compute common time-domain HRV metrics from RR intervals in seconds.
-    Returns dict: {'sdnn_ms':..., 'rmssd_ms':..., 'mean_rr_ms':...}
-    If rr_intervals_s is empty, returns NaNs.
+    Compute heart rate variability (HRV) metrics.
+
+    Metric: SDNN (standard deviation of RR intervals)
+
+    Educational note:
+    -----------------
+    HRV reflects how much the heart rhythm varies over time.
+    High HRV = healthy autonomic flexibility.
+    Low HRV = stress or reduced vagal tone.
     """
     if rr_intervals_s.size == 0:
-        return {'sdnn_ms': float('nan'),
-                'rmssd_ms': float('nan'),
-                'mean_rr_ms': float('nan')}
-    # SDNN: use sample std (ddof=1)
-    sdnn_s = np.std(rr_intervals_s, ddof=1)
-    rmssd_s = np.sqrt(np.mean(np.diff(rr_intervals_s)**2))
-    mean_rr_s = np.mean(rr_intervals_s)
-    return {'sdnn_ms': sdnn_s * 1000.0,
-            'rmssd_ms': rmssd_s * 1000.0,
-            'mean_rr_ms': mean_rr_s * 1000.0}
+        return np.nan
 
-def classify_rhythm(hr_bpm: float, hrv_sdnn_ms: float,
-                    hr_threshold: Tuple[int,int] = (40, 110),
-                    hrv_threshold: float = 150.0) -> str:
+    sdnn = np.std(rr_intervals_s) * 1000.0  # convert to ms
+    return sdnn
+
+
+def classify_rhythm(hr_bpm, hrv_sdnn_ms, hr_threshold=(40, 110), hrv_threshold=150):
     """
-    Rule-based classification. Returns string label.
-    Handles NaNs safely.
+    Simple rule-based classification of heart rhythm.
+
+    Educational rules:
+    ------------------
+    - Bradycardia: HR < 40 bpm
+    - Tachycardia: HR > 110 bpm
+    - Irregular rhythm: HRV too high (SDNN > 150 ms)
+    - Otherwise: Normal
     """
-    if np.isnan(hr_bpm):
+    if hr_bpm == 0:
         return "no-detection"
     if hr_bpm < hr_threshold[0]:
         return "bradycardia"
     if hr_bpm > hr_threshold[1]:
         return "tachycardia"
-    if not np.isnan(hrv_sdnn_ms) and (hrv_sdnn_ms > hrv_threshold):
+    if hrv_sdnn_ms > hrv_threshold:
         return "irregular"
     return "normal"
+
