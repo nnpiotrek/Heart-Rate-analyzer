@@ -1,0 +1,42 @@
+def load_csv_ecg(path: str, fs: Optional[float] = None, column: Optional[str] = None):
+    """
+    Load ECG from CSV. Attempts to detect time and signal columns.
+    Returns (t, signal, fs). If time column missing, returns t = arange(len(sig))/fs if fs provided,
+    otherwise t = np.arange(len(sig)).
+    """
+    df = pd.read_csv(path)
+    # try common names
+    cols = [c.lower() for c in df.columns]
+    time_col = None
+    sig_col = None
+    for name in ('time', 'timestamp', 't'):
+        if name in cols:
+            time_col = df.columns[cols.index(name)]
+            break
+    for name in ('ecg', 'ppg', 'signal', 'value'):
+        if name in cols:
+            sig_col = df.columns[cols.index(name)]
+            break
+    if sig_col is None:
+        # fallback: pick first numeric column
+        numeric_cols = df.select_dtypes(include='number').columns
+        if len(numeric_cols) == 0:
+            raise ValueError("No numeric column found in CSV")
+        sig_col = numeric_cols[0]
+    sig = df[sig_col].values.astype(float)
+    if time_col is not None:
+        t = df[time_col].values.astype(float)
+        if fs is None:
+            # try estimate from time vector
+            dt = np.diff(t)
+            if np.any(dt <= 0):
+                fs = None
+            else:
+                fs = 1.0 / np.median(dt)
+    if time_col is None:
+        if fs is None:
+            # unknown sampling: return integer time index
+            t = np.arange(len(sig))
+        else:
+            t = np.arange(len(sig)) / float(fs)
+    return t, sig, fs
