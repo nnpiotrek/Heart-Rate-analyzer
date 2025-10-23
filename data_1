@@ -6,9 +6,6 @@ Simulated and real ECG data utilities.
 This module provides tools for generating synthetic ECG signals
 and loading real data from CSV or PhysioNet.
 
-Learning objectives:
-- Understand how ECG waveforms can be *modeled* using simple sinusoids.
-- Learn practical data handling (loading files, managing shapes, reproducibility).
 """
 
 import numpy as np
